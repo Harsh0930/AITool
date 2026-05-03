@@ -36,7 +36,7 @@ app.post('/api/analyze-website', async (req, res) => {
         'Authorization': `Bearer ${openaiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-5.5',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
@@ -104,7 +104,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
         'Authorization': `Bearer ${openaiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-5.5',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
