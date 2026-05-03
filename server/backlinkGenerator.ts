@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import process from 'node:process'
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard'
 type LinkType = 'Guest post' | 'Directory' | 'Forum' | 'PR'
