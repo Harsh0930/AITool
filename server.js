@@ -132,7 +132,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
       da: opp.da || Math.floor(Math.random() * 50) + 30,
       traffic: opp.traffic || Math.floor(Math.random() * 20000) + 5000,
       linkType: opp.linkType || 'Guest post',
-      contact: opp.contact || `contact@${opp.site || \`example${idx + 1}.com\`}`,
+      contact: opp.contact || `contact@${opp.site || 'example' + (idx + 1) + '.com'}`,
       priority: opp.priority || 'Easy win',
       difficulty: opp.difficulty || 'Medium',
       relevance: opp.relevance || Math.floor(Math.random() * 30) + 70,
