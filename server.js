@@ -2,17 +2,21 @@ import dotenv from 'dotenv';
 dotenv.config();
 import express from 'express';
 import cors from 'cors';
-// Node 18+ provides a global fetch; no need to import node-fetch
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'dist')));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-// Analyze website endpoint
 app.post('/api/analyze-website', async (req, res) => {
   try {
     const { url } = req.body;
@@ -20,39 +24,40 @@ app.post('/api/analyze-website', async (req, res) => {
       return res.status(400).json({ error: 'Website URL is required' });
     }
 
-    const openaiKey = process.env.OPENAI_API_KEY;
-    if (!openaiKey) {
-      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
     }
 
-    const prompt = `Analyze the website ${url} for SEO and backlink purposes. Return a JSON object with:
+    const prompt = `Analyze the website ${url} for SEO and backlink purposes. Return ONLY a valid JSON object with:
 - summary: brief analysis
 - keywords: array of 5-8 relevant keywords
 - targetAudiences: array of 2-4 target audience descriptions`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiKey}`
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'gpt-5.5',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }]
       })
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('OpenAI error:', data);
+      console.error('Anthropic error:', data);
       return res.status(500).json({ error: 'Failed to analyze website' });
     }
 
     let analysis;
     try {
-      analysis = JSON.parse(data.choices[0].message.content);
+      analysis = JSON.parse(data.content[0].text);
     } catch {
       analysis = {
         summary: `Analysis of ${url} completed.`,
@@ -68,7 +73,7 @@ app.post('/api/analyze-website', async (req, res) => {
         targetAudiences: analysis.targetAudiences || ['Marketing teams'],
         title: url.replace(/^https?:\/\//, '').replace(/\/$/, '')
       },
-      provider: 'openai'
+      provider: 'anthropic'
     });
   } catch (err) {
     console.error('Analyze website error:', err);
@@ -76,14 +81,13 @@ app.post('/api/analyze-website', async (req, res) => {
   }
 });
 
-// Generate backlinks endpoint
 app.post('/api/generate-backlinks', async (req, res) => {
   try {
     const form = req.body;
-    const openaiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
 
-    if (!openaiKey) {
-      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
+    if (!apiKey) {
+      return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
     }
 
     const prompt = `Generate 6 backlink opportunities for:
@@ -96,31 +100,32 @@ Content Type: ${form.contentType}
 Target Audience: ${form.targetAudience}
 DA Range: ${form.daRange[0]}-${form.daRange[1]}
 
-Return a JSON array of objects with: site, country, da (number), traffic (number), linkType, contact, priority ("Easy win" or "Keep for later"), difficulty ("Easy", "Medium", "Hard"), relevance (number 0-100), reason, keywords (array), anchors (array), contentIdea, risks (array), nextStep`;
+Return ONLY a valid JSON array of objects with keys: site, country, da (number), traffic (number), linkType, contact, priority ("Easy win" or "Keep for later"), difficulty ("Easy", "Medium", "Hard"), relevance (number 0-100), reason, keywords (array), anchors (array), contentIdea, risks (array), nextStep`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${openaiKey}`
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'gpt-5.5',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }]
       })
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('OpenAI error:', data);
+      console.error('Anthropic error:', data);
       return res.status(500).json({ error: 'Failed to generate backlinks' });
     }
 
     let opportunities = [];
     try {
-      opportunities = JSON.parse(data.choices[0].message.content);
+      opportunities = JSON.parse(data.content[0].text);
     } catch {
       opportunities = generateFallbackOpportunities(form);
     }
@@ -132,7 +137,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
       da: opp.da || Math.floor(Math.random() * 50) + 30,
       traffic: opp.traffic || Math.floor(Math.random() * 20000) + 5000,
       linkType: opp.linkType || 'Guest post',
-      contact: opp.contact || `contact@${opp.site || 'example' + (idx + 1) + '.com'}`,
+      contact: opp.contact || `contact@${opp.site || `example${idx + 1}.com`}`,
       priority: opp.priority || 'Easy win',
       difficulty: opp.difficulty || 'Medium',
       relevance: opp.relevance || Math.floor(Math.random() * 30) + 70,
@@ -146,7 +151,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
     }));
 
     res.json({
-      provider: 'openai',
+      provider: 'anthropic',
       overview: {
         headline: `Backlink opportunities for ${form.url}`,
         summary: `Found ${opportunities.length} opportunities matching your criteria.`,
@@ -195,6 +200,10 @@ function generateFallbackOpportunities(form) {
   }));
 }
 
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+});
+
 app.listen(PORT, () => {
-  console.log(`API server listening on port ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
