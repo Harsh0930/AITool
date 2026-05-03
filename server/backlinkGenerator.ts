@@ -37,7 +37,7 @@ interface GenerateBacklinksPayload {
 }
 
 interface WebsiteAnalysis {
-  provider: 'openai' | 'fallback'
+  provider: 'openai' | 'fallback' | 'anthropic'
   sourceUrl: string
   title: string
   description: string
@@ -50,7 +50,7 @@ interface WebsiteAnalysis {
 }
 
 interface GeneratedReport {
-  provider: 'openai' | 'fallback'
+  provider: 'openai' | 'fallback' | 'anthropic'
   model: string
   generatedAt: string
   validationNote: string
