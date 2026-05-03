@@ -1,33 +1,34 @@
-require('dotenv').config()
-const express = require('express')
-const cors = require('cors')
-const fetch = require('node-fetch')
+import dotenv from 'dotenv';
+dotenv.config();
+import express from 'express';
+import cors from 'cors';
+// Node 18+ provides a global fetch; no need to import node-fetch
 
-const app = express()
-const PORT = process.env.PORT || 10000
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-app.use(cors())
-app.use(express.json())
+app.use(cors());
+app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }))
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // Analyze website endpoint
 app.post('/api/analyze-website', async (req, res) => {
   try {
-    const { url } = req.body
+    const { url } = req.body;
     if (!url) {
-      return res.status(400).json({ error: 'Website URL is required' })
+      return res.status(400).json({ error: 'Website URL is required' });
     }
 
-    const openaiKey = process.env.OPENAI_API_KEY
+    const openaiKey = process.env.OPENAI_API_KEY;
     if (!openaiKey) {
-      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' })
+      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
     }
 
     const prompt = `Analyze the website ${url} for SEO and backlink purposes. Return a JSON object with:
 - summary: brief analysis
 - keywords: array of 5-8 relevant keywords
-- targetAudiences: array of 2-4 target audience descriptions`
+- targetAudiences: array of 2-4 target audience descriptions`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -40,24 +41,24 @@ app.post('/api/analyze-website', async (req, res) => {
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
-    })
+    });
 
-    const data = await response.json()
+    const data = await response.json();
 
     if (!response.ok) {
-      console.error('OpenAI error:', data)
-      return res.status(500).json({ error: 'Failed to analyze website' })
+      console.error('OpenAI error:', data);
+      return res.status(500).json({ error: 'Failed to analyze website' });
     }
 
-    let analysis
+    let analysis;
     try {
-      analysis = JSON.parse(data.choices[0].message.content)
+      analysis = JSON.parse(data.choices[0].message.content);
     } catch {
       analysis = {
         summary: `Analysis of ${url} completed.`,
         keywords: ['SEO', 'backlinks', 'digital marketing'],
         targetAudiences: ['Marketing teams', 'SEO professionals']
-      }
+      };
     }
 
     res.json({
@@ -68,21 +69,21 @@ app.post('/api/analyze-website', async (req, res) => {
         title: url.replace(/^https?:\/\//, '').replace(/\/$/, '')
       },
       provider: 'openai'
-    })
+    });
   } catch (err) {
-    console.error('Analyze website error:', err)
-    res.status(500).json({ error: 'Failed to analyze website' })
+    console.error('Analyze website error:', err);
+    res.status(500).json({ error: 'Failed to analyze website' });
   }
-})
+});
 
 // Generate backlinks endpoint
 app.post('/api/generate-backlinks', async (req, res) => {
   try {
-    const form = req.body
-    const openaiKey = process.env.OPENAI_API_KEY
+    const form = req.body;
+    const openaiKey = process.env.OPENAI_API_KEY;
 
     if (!openaiKey) {
-      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' })
+      return res.status(500).json({ error: 'Server missing OPENAI_API_KEY' });
     }
 
     const prompt = `Generate 6 backlink opportunities for:
@@ -95,7 +96,7 @@ Content Type: ${form.contentType}
 Target Audience: ${form.targetAudience}
 DA Range: ${form.daRange[0]}-${form.daRange[1]}
 
-Return a JSON array of objects with: site, country, da (number), traffic (number), linkType, contact, priority ("Easy win" or "Keep for later"), difficulty ("Easy", "Medium", "Hard"), relevance (number 0-100), reason, keywords (array), anchors (array), contentIdea, risks (array), nextStep`
+Return a JSON array of objects with: site, country, da (number), traffic (number), linkType, contact, priority ("Easy win" or "Keep for later"), difficulty ("Easy", "Medium", "Hard"), relevance (number 0-100), reason, keywords (array), anchors (array), contentIdea, risks (array), nextStep`;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -108,20 +109,20 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
-    })
+    });
 
-    const data = await response.json()
+    const data = await response.json();
 
     if (!response.ok) {
-      console.error('OpenAI error:', data)
-      return res.status(500).json({ error: 'Failed to generate backlinks' })
+      console.error('OpenAI error:', data);
+      return res.status(500).json({ error: 'Failed to generate backlinks' });
     }
 
-    let opportunities = []
+    let opportunities = [];
     try {
-      opportunities = JSON.parse(data.choices[0].message.content)
+      opportunities = JSON.parse(data.choices[0].message.content);
     } catch {
-      opportunities = generateFallbackOpportunities(form)
+      opportunities = generateFallbackOpportunities(form);
     }
 
     opportunities = opportunities.map((opp, idx) => ({
@@ -131,7 +132,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
       da: opp.da || Math.floor(Math.random() * 50) + 30,
       traffic: opp.traffic || Math.floor(Math.random() * 20000) + 5000,
       linkType: opp.linkType || 'Guest post',
-      contact: opp.contact || `contact@${opp.site || `example${idx + 1}.com`}`,
+      contact: opp.contact || `contact@${opp.site || \`example${idx + 1}.com\`}`,
       priority: opp.priority || 'Easy win',
       difficulty: opp.difficulty || 'Medium',
       relevance: opp.relevance || Math.floor(Math.random() * 30) + 70,
@@ -142,7 +143,7 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
       risks: opp.risks || ['Ensure content quality'],
       nextStep: opp.nextStep || 'Send personalized outreach email',
       submission: opp.submission || 'Guest post submission'
-    }))
+    }));
 
     res.json({
       provider: 'openai',
@@ -165,15 +166,15 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
         'Track responses and follow up appropriately.'
       ],
       generatedAt: new Date().toISOString()
-    })
+    });
   } catch (err) {
-    console.error('Generate backlinks error:', err)
-    res.status(500).json({ error: 'Failed to generate backlink opportunities' })
+    console.error('Generate backlinks error:', err);
+    res.status(500).json({ error: 'Failed to generate backlink opportunities' });
   }
-})
+});
 
 function generateFallbackOpportunities(form) {
-  const sites = ['searchenginejournal.com', 'moz.com', 'ahrefs.com', 'semrush.com', 'backlinko.com', 'neilpatel.com']
+  const sites = ['searchenginejournal.com', 'moz.com', 'ahrefs.com', 'semrush.com', 'backlinko.com', 'neilpatel.com'];
   return sites.map((site, idx) => ({
     site,
     country: form.country,
@@ -191,9 +192,9 @@ function generateFallbackOpportunities(form) {
     risks: ['Ensure content is high quality and non-promotional'],
     nextStep: 'Send personalized outreach email',
     submission: 'Guest post submission'
-  }))
+  }));
 }
 
 app.listen(PORT, () => {
-  console.log(`API server listening on port ${PORT}`)
-})
+  console.log(`API server listening on port ${PORT}`);
+});
