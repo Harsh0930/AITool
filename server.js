@@ -24,9 +24,9 @@ app.post('/api/analyze-website', async (req, res) => {
       return res.status(400).json({ error: 'Website URL is required' });
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
+      return res.status(500).json({ error: 'Server missing OPENROUTER_API_KEY' });
     }
 
     const prompt = `Analyze the website ${url} for SEO and backlink purposes. Return ONLY a valid JSON object with:
@@ -34,15 +34,14 @@ app.post('/api/analyze-website', async (req, res) => {
 - keywords: array of 5-8 relevant keywords
 - targetAudiences: array of 2-4 target audience descriptions`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'anthropic/claude-3.5-sonnet',
         max_tokens: 1024,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -51,13 +50,13 @@ app.post('/api/analyze-website', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Anthropic error:', data);
+      console.error('OpenRouter error:', data);
       return res.status(500).json({ error: 'Failed to analyze website' });
     }
 
     let analysis;
     try {
-      analysis = JSON.parse(data.content[0].text);
+      analysis = JSON.parse(data.choices[0].message.content);
     } catch {
       analysis = {
         summary: `Analysis of ${url} completed.`,
@@ -73,7 +72,7 @@ app.post('/api/analyze-website', async (req, res) => {
         targetAudiences: analysis.targetAudiences || ['Marketing teams'],
         title: url.replace(/^https?:\/\//, '').replace(/\/$/, '')
       },
-      provider: 'anthropic'
+      provider: 'openrouter'
     });
   } catch (err) {
     console.error('Analyze website error:', err);
@@ -84,10 +83,10 @@ app.post('/api/analyze-website', async (req, res) => {
 app.post('/api/generate-backlinks', async (req, res) => {
   try {
     const form = req.body;
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
-      return res.status(500).json({ error: 'Server missing ANTHROPIC_API_KEY' });
+      return res.status(500).json({ error: 'Server missing OPENROUTER_API_KEY' });
     }
 
     const prompt = `Generate 6 backlink opportunities for:
@@ -102,15 +101,14 @@ DA Range: ${form.daRange[0]}-${form.daRange[1]}
 
 Return ONLY a valid JSON array of objects with keys: site, country, da (number), traffic (number), linkType, contact, priority ("Easy win" or "Keep for later"), difficulty ("Easy", "Medium", "Hard"), relevance (number 0-100), reason, keywords (array), anchors (array), contentIdea, risks (array), nextStep`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'anthropic/claude-3.5-sonnet',
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -119,13 +117,13 @@ Return ONLY a valid JSON array of objects with keys: site, country, da (number),
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('Anthropic error:', data);
+      console.error('OpenRouter error:', data);
       return res.status(500).json({ error: 'Failed to generate backlinks' });
     }
 
     let opportunities = [];
     try {
-      opportunities = JSON.parse(data.content[0].text);
+      opportunities = JSON.parse(data.choices[0].message.content);
     } catch {
       opportunities = generateFallbackOpportunities(form);
     }
@@ -151,7 +149,7 @@ Return ONLY a valid JSON array of objects with keys: site, country, da (number),
     }));
 
     res.json({
-      provider: 'anthropic',
+      provider: 'openrouter',
       overview: {
         headline: `Backlink opportunities for ${form.url}`,
         summary: `Found ${opportunities.length} opportunities matching your criteria.`,
