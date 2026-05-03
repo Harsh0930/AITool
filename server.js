@@ -37,7 +37,6 @@ app.post('/api/analyze-website', async (req, res) => {
       },
       body: JSON.stringify({
         model: 'gpt-5.5',
-        model: 'gpt-3.5-turbo',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
@@ -106,7 +105,6 @@ Return a JSON array of objects with: site, country, da (number), traffic (number
       },
       body: JSON.stringify({
         model: 'gpt-5.5',
-        model: 'gpt-3.5-turbo',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
       })
