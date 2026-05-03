@@ -27,15 +27,17 @@ function backlinkApiPlugin() {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
+  if (env.OPENROUTER_API_KEY) {
+    process.env.OPENROUTER_API_KEY = env.OPENROUTER_API_KEY
+  }
+
+  // Retain legacy vars for fallback if needed
   if (env.ANTHROPIC_API_KEY) {
     process.env.ANTHROPIC_API_KEY = env.ANTHROPIC_API_KEY
   }
-
-  // Retain OpenAI vars for fallback if needed
   if (env.OPENAI_API_KEY) {
     process.env.OPENAI_API_KEY = env.OPENAI_API_KEY
   }
-
   if (env.OPENAI_MODEL) {
     process.env.OPENAI_MODEL = env.OPENAI_MODEL
   }

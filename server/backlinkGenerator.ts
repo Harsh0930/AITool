@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import process from 'node:process'
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard'
 type LinkType = 'Guest post' | 'Directory' | 'Forum' | 'PR'
@@ -37,7 +36,7 @@ interface GenerateBacklinksPayload {
 }
 
 interface WebsiteAnalysis {
-  provider: 'openai' | 'fallback' | 'anthropic'
+  provider: 'openrouter' | 'fallback'
   sourceUrl: string
   title: string
   description: string
@@ -50,7 +49,7 @@ interface WebsiteAnalysis {
 }
 
 interface GeneratedReport {
-  provider: 'openai' | 'fallback' | 'anthropic'
+  provider: 'openrouter' | 'fallback'
   model: string
   generatedAt: string
   validationNote: string
@@ -87,24 +86,9 @@ const websiteAnalysisSchema = {
     summary: { type: 'string' },
     industryHint: { type: 'string' },
     contentTypeHint: { type: 'string' },
-    keywords: {
-      type: 'array',
-      minItems: 4,
-      maxItems: 6,
-      items: { type: 'string' }
-    },
-    targetAudiences: {
-      type: 'array',
-      minItems: 3,
-      maxItems: 5,
-      items: { type: 'string' }
-    },
-    notes: {
-      type: 'array',
-      minItems: 2,
-      maxItems: 4,
-      items: { type: 'string' }
-    }
+    keywords: { type: 'array', minItems: 4, maxItems: 6, items: { type: 'string' } },
+    targetAudiences: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } },
+    notes: { type: 'array', minItems: 2, maxItems: 4, items: { type: 'string' } }
   }
 } as const
 
@@ -125,18 +109,8 @@ const reportCoreSchema = {
         firstPriority: { type: 'string' }
       }
     },
-    aiSuggestions: {
-      type: 'array',
-      minItems: 3,
-      maxItems: 4,
-      items: { type: 'string' }
-    },
-    nextSteps: {
-      type: 'array',
-      minItems: 3,
-      maxItems: 4,
-      items: { type: 'string' }
-    },
+    aiSuggestions: { type: 'array', minItems: 3, maxItems: 4, items: { type: 'string' } },
+    nextSteps: { type: 'array', minItems: 3, maxItems: 4, items: { type: 'string' } },
     opportunities: {
       type: 'array',
       minItems: 5,
@@ -144,168 +118,44 @@ const reportCoreSchema = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: [
-          'id',
-          'site',
-          'da',
-          'traffic',
-          'relevance',
-          'difficulty',
-          'country',
-          'linkType',
-          'contact',
-          'submission',
-          'priority',
-          'reason',
-          'contentIdea',
-          'keywords',
-          'anchors',
-          'risks',
-          'nextStep'
-        ],
+        required: ['id','site','da','traffic','relevance','difficulty','country','linkType','contact','submission','priority','reason','contentIdea','keywords','anchors','risks','nextStep'],
         properties: {
-          id: { type: 'number' },
-          site: { type: 'string' },
-          da: { type: 'number' },
-          traffic: { type: 'number' },
-          relevance: { type: 'number' },
-          difficulty: { type: 'string', enum: ['Easy', 'Medium', 'Hard'] },
-          country: { type: 'string' },
-          linkType: { type: 'string', enum: ['Guest post', 'Directory', 'Forum', 'PR'] },
-          contact: { type: 'string' },
-          submission: { type: 'string' },
-          priority: { type: 'string', enum: ['Easy win', 'High authority', 'Quick approval'] },
-          reason: { type: 'string' },
-          contentIdea: { type: 'string' },
-          keywords: {
-            type: 'array',
-            minItems: 3,
-            maxItems: 3,
-            items: { type: 'string' }
-          },
-          anchors: {
-            type: 'array',
-            minItems: 3,
-            maxItems: 3,
-            items: { type: 'string' }
-          },
-          risks: {
-            type: 'array',
-            minItems: 2,
-            maxItems: 3,
-            items: { type: 'string' }
-          },
+          id: { type: 'number' }, site: { type: 'string' }, da: { type: 'number' }, traffic: { type: 'number' },
+          relevance: { type: 'number' }, difficulty: { type: 'string', enum: ['Easy','Medium','Hard'] },
+          country: { type: 'string' }, linkType: { type: 'string', enum: ['Guest post','Directory','Forum','PR'] },
+          contact: { type: 'string' }, submission: { type: 'string' },
+          priority: { type: 'string', enum: ['Easy win','High authority','Quick approval'] },
+          reason: { type: 'string' }, contentIdea: { type: 'string' },
+          keywords: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
+          anchors: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'string' } },
+          risks: { type: 'array', minItems: 2, maxItems: 3, items: { type: 'string' } },
           nextStep: { type: 'string' }
         }
       }
     },
     trackerPreview: {
-      type: 'array',
-      minItems: 3,
-      maxItems: 3,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['status', 'site', 'note'],
-        properties: {
-          status: { type: 'string' },
-          site: { type: 'string' },
-          note: { type: 'string' }
-        }
+      type: 'array', minItems: 3, maxItems: 3,
+      items: { type: 'object', additionalProperties: false, required: ['status','site','note'],
+        properties: { status: { type: 'string' }, site: { type: 'string' }, note: { type: 'string' } }
       }
     }
   }
 } as const
 
 const baseSeeds = [
-  {
-    site: 'GrowthStack Journal',
-    linkType: 'Guest post' as const,
-    difficulty: 'Medium' as const,
-    priority: 'High authority' as const,
-    country: 'Global',
-    daBase: 76,
-    trafficBase: 42000
-  },
-  {
-    site: 'LocalRank Spotlight',
-    linkType: 'Directory' as const,
-    difficulty: 'Easy' as const,
-    priority: 'Easy win' as const,
-    country: 'India',
-    daBase: 48,
-    trafficBase: 11800
-  },
-  {
-    site: 'Founder Pipeline Weekly',
-    linkType: 'PR' as const,
-    difficulty: 'Easy' as const,
-    priority: 'Quick approval' as const,
-    country: 'United States',
-    daBase: 60,
-    trafficBase: 19600
-  },
-  {
-    site: 'MarTech Bridge',
-    linkType: 'Guest post' as const,
-    difficulty: 'Medium' as const,
-    priority: 'High authority' as const,
-    country: 'United Kingdom',
-    daBase: 68,
-    trafficBase: 25500
-  },
-  {
-    site: 'Operator Forum',
-    linkType: 'Forum' as const,
-    difficulty: 'Easy' as const,
-    priority: 'Quick approval' as const,
-    country: 'Canada',
-    daBase: 44,
-    trafficBase: 8700
-  },
-  {
-    site: 'Commerce Authority Review',
-    linkType: 'PR' as const,
-    difficulty: 'Hard' as const,
-    priority: 'High authority' as const,
-    country: 'Global',
-    daBase: 74,
-    trafficBase: 33800
-  }
+  { site: 'GrowthStack Journal', linkType: 'Guest post' as const, difficulty: 'Medium' as const, priority: 'High authority' as const, country: 'Global', daBase: 76, trafficBase: 42000 },
+  { site: 'LocalRank Spotlight', linkType: 'Directory' as const, difficulty: 'Easy' as const, priority: 'Easy win' as const, country: 'India', daBase: 48, trafficBase: 11800 },
+  { site: 'Founder Pipeline Weekly', linkType: 'PR' as const, difficulty: 'Easy' as const, priority: 'Quick approval' as const, country: 'United States', daBase: 60, trafficBase: 19600 },
+  { site: 'MarTech Bridge', linkType: 'Guest post' as const, difficulty: 'Medium' as const, priority: 'High authority' as const, country: 'United Kingdom', daBase: 68, trafficBase: 25500 },
+  { site: 'Operator Forum', linkType: 'Forum' as const, difficulty: 'Easy' as const, priority: 'Quick approval' as const, country: 'Canada', daBase: 44, trafficBase: 8700 },
+  { site: 'Commerce Authority Review', linkType: 'PR' as const, difficulty: 'Hard' as const, priority: 'High authority' as const, country: 'Global', daBase: 74, trafficBase: 33800 }
 ]
 
 const stopWords = new Set([
-  'about',
-  'after',
-  'also',
-  'among',
-  'another',
-  'because',
-  'being',
-  'between',
-  'build',
-  'could',
-  'first',
-  'from',
-  'have',
-  'into',
-  'more',
-  'most',
-  'only',
-  'other',
-  'over',
-  'such',
-  'that',
-  'their',
-  'there',
-  'these',
-  'this',
-  'through',
-  'using',
-  'with',
-  'your'
+  'about','after','also','among','another','because','being','between','build','could',
+  'first','from','have','into','more','most','only','other','over','such','that','their',
+  'there','these','this','through','using','with','your'
 ])
-
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -316,18 +166,12 @@ function normaliseUrl(url: string) {
 }
 
 function ensureAbsoluteUrl(url: string) {
-  if (/^https?:\/\//i.test(url)) {
-    return url
-  }
-
+  if (/^https?:\/\//i.test(url)) return url
   return `https://${url}`
 }
 
 function toSlug(input: string) {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  return input.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 function sendJson(res: ServerResponse, statusCode: number, payload: unknown) {
@@ -336,13 +180,11 @@ function sendJson(res: ServerResponse, statusCode: number, payload: unknown) {
   res.end(JSON.stringify(payload))
 }
 
-async function readJsonBody<T>(req: IncomingMessage) {
+async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   const chunks: Uint8Array[] = []
-
   for await (const chunk of req) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
-
   const raw = Buffer.concat(chunks).toString('utf8')
   return raw ? (JSON.parse(raw) as T) : ({} as T)
 }
@@ -350,15 +192,15 @@ async function readJsonBody<T>(req: IncomingMessage) {
 function isValidPayload(payload: Partial<GenerateBacklinksPayload>): payload is GenerateBacklinksPayload {
   return Boolean(
     payload &&
-      typeof payload.url === 'string' &&
-      typeof payload.industry === 'string' &&
-      typeof payload.backlinkScope === 'string' &&
-      typeof payload.country === 'string' &&
-      typeof payload.goal === 'string' &&
-      typeof payload.contentType === 'string' &&
-      typeof payload.targetAudience === 'string' &&
-      Array.isArray(payload.daRange) &&
-      payload.daRange.length === 2
+    typeof payload.url === 'string' &&
+    typeof payload.industry === 'string' &&
+    typeof payload.backlinkScope === 'string' &&
+    typeof payload.country === 'string' &&
+    typeof payload.goal === 'string' &&
+    typeof payload.contentType === 'string' &&
+    typeof payload.targetAudience === 'string' &&
+    Array.isArray(payload.daRange) &&
+    payload.daRange.length === 2
   )
 }
 
@@ -388,44 +230,39 @@ function extractKeywords(text: string, fallbackDomain: string) {
     .filter((token) => token.length > 3 && !stopWords.has(token))
 
   const frequency = new Map<string, number>()
-
   for (const token of tokens) {
     frequency.set(token, (frequency.get(token) ?? 0) + 1)
   }
 
-  const sorted = [...frequency.entries()]
+  const sorted = Array.from(frequency.entries())
     .sort((left, right) => right[1] - left[1])
     .slice(0, 6)
     .map(([token]) => token)
 
-  if (sorted.length >= 4) {
-    return sorted
-  }
+  if (sorted.length >= 4) return sorted
 
   const domainParts = fallbackDomain
     .replace(/\.[a-z.]+$/i, '')
     .split(/[-.]/)
     .filter((part) => part.length > 2)
 
-  return [...new Set([...sorted, ...domainParts, 'backlink strategy', 'seo workflow'])].slice(0, 6)
+  const combined = [...sorted, ...domainParts, 'backlink strategy', 'seo workflow']
+const unique = Array.from(new Set(combined))
+return unique.slice(0, 6)
 }
 
 function guessAudiences(industryHint: string, keywords: string[]) {
   const lowerIndustry = industryHint.toLowerCase()
   const baseAudiences = ['SEO managers', 'Content marketers', 'Growth teams']
-
-  if (lowerIndustry.includes('saas') || keywords.some((keyword) => keyword.includes('software'))) {
+  if (lowerIndustry.includes('saas') || keywords.some((k) => k.includes('software'))) {
     return ['SaaS founders', 'Growth marketers', 'Demand generation teams', 'RevOps leaders']
   }
-
-  if (lowerIndustry.includes('local') || keywords.some((keyword) => keyword.includes('local'))) {
+  if (lowerIndustry.includes('local') || keywords.some((k) => k.includes('local'))) {
     return ['Local business owners', 'Regional marketing teams', 'Franchise operators', 'Service-area businesses']
   }
-
   if (lowerIndustry.includes('agency')) {
     return ['Agency owners', 'SEO strategists', 'Account managers', 'Client delivery teams']
   }
-
   return baseAudiences
 }
 
@@ -433,40 +270,23 @@ async function fetchWebsiteSnapshot(url: string): Promise<WebsiteSnapshot> {
   const absoluteUrl = ensureAbsoluteUrl(url)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 8000)
-
   try {
     const response = await fetch(absoluteUrl, {
       signal: controller.signal,
-      headers: {
-        'User-Agent': 'BacklinkAI/1.0'
-      }
+      headers: { 'User-Agent': 'BacklinkAI/1.0' }
     })
-
     const html = await response.text()
     const title = extractMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i)
     const description = extractMatch(html, /<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i)
-    const headings = [...html.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi)]
-      .map((match) => sanitizeText(match[1]))
+    const headings = Array.from(html.matchAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi))
+      .map((m) => sanitizeText(m[1]))
       .filter(Boolean)
       .slice(0, 8)
     const text = sanitizeText(html).slice(0, 5000)
-
-    return {
-      sourceUrl: absoluteUrl,
-      title,
-      description,
-      headings,
-      text
-    }
+    return { sourceUrl: absoluteUrl, title, description, headings, text }
   } catch {
     const domain = normaliseUrl(absoluteUrl)
-    return {
-      sourceUrl: absoluteUrl,
-      title: domain,
-      description: '',
-      headings: [domain],
-      text: domain.replace(/[.-]/g, ' ')
-    }
+    return { sourceUrl: absoluteUrl, title: domain, description: '', headings: [domain], text: domain.replace(/[.-]/g, ' ') }
   } finally {
     clearTimeout(timeout)
   }
@@ -478,7 +298,6 @@ function buildFallbackAnalysis(snapshot: WebsiteSnapshot, reason?: string): Webs
   const firstKeyword = keywords[0] ?? 'digital growth'
   const industryHint = snapshot.title || firstKeyword
   const targetAudiences = guessAudiences(industryHint, keywords)
-
   return {
     provider: 'fallback',
     sourceUrl: snapshot.sourceUrl,
@@ -497,56 +316,45 @@ function buildFallbackAnalysis(snapshot: WebsiteSnapshot, reason?: string): Webs
   }
 }
 
-// Deprecated OpenAI client placeholder. Not used in Anthropic implementation.
-function getOpenAIClient(): never {
-  throw new Error('OpenAI client is not available. Use Anthropic API.')
-}
-
 async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
   const snapshot = await fetchWebsiteSnapshot(url)
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) return buildFallbackAnalysis(snapshot)
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return buildFallbackAnalysis(snapshot);
-  }
-
-  const prompt = `You are an SEO analyst. Provide a concise JSON analysis of the website for backlink strategy.
+  const prompt = `You are an SEO analyst. Analyze the website and return ONLY a valid JSON object with these fields:
+- summary: brief analysis (string)
+- industryHint: likely industry (string)
+- contentTypeHint: content type (string)
+- keywords: array of 4-6 keywords
+- targetAudiences: array of 3-5 audiences
+- notes: array of 2-4 notes
 
 Source URL: ${snapshot.sourceUrl}
 Title: ${snapshot.title}
 Meta description: ${snapshot.description}
 Headings: ${snapshot.headings.join(' | ')}
-Extracted text: ${snapshot.text}`;
+Extracted text: ${snapshot.text}`
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'anthropic/claude-3.5-sonnet',
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }]
       })
-    });
-
-    const data = await response.json();
+    })
+    const data = await response.json()
     if (!response.ok) {
-      console.error('Anthropic error:', data);
-      return buildFallbackAnalysis(snapshot, 'Anthropic API error');
+      console.error('OpenRouter error:', data)
+      return buildFallbackAnalysis(snapshot, `OpenRouter API error: ${data.error?.message || 'unknown'}`)
     }
-    let raw: string;
-    try {
-      raw = data.content[0].text;
-    } catch {
-      return buildFallbackAnalysis(snapshot, 'Unexpected Anthropic response format');
-    }
-    const parsed = JSON.parse(raw) as Omit<WebsiteAnalysis, 'provider' | 'sourceUrl' | 'title' | 'description'>;
+    const raw = data.choices?.[0]?.message?.content
+    if (!raw) return buildFallbackAnalysis(snapshot, 'Unexpected OpenRouter response format')
+    const parsed = JSON.parse(raw) as Omit<WebsiteAnalysis, 'provider' | 'sourceUrl' | 'title' | 'description'>
     return {
-      provider: 'anthropic',
+      provider: 'openrouter',
       sourceUrl: snapshot.sourceUrl,
       title: snapshot.title || normaliseUrl(snapshot.sourceUrl),
       description: snapshot.description || `Website analysis for ${normaliseUrl(snapshot.sourceUrl)}`,
@@ -556,10 +364,10 @@ Extracted text: ${snapshot.text}`;
       keywords: parsed.keywords,
       targetAudiences: parsed.targetAudiences,
       notes: parsed.notes
-    };
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Live website analysis was unavailable.';
-    return buildFallbackAnalysis(snapshot, message);
+    const message = error instanceof Error ? error.message : 'Live website analysis was unavailable.'
+    return buildFallbackAnalysis(snapshot, message)
   }
 }
 
@@ -567,34 +375,25 @@ function buildFallbackReport(payload: GenerateBacklinksPayload, analysis: Websit
   const primaryKeyword = analysis.keywords[0] ?? `${payload.industry.toLowerCase()} backlinks`
   const secondaryKeyword = analysis.keywords[1] ?? `${payload.goal.toLowerCase()} seo`
   const opportunities: Opportunity[] = baseSeeds.map((seed, index) => {
-    const chosenCountry =
-      payload.country === 'Global'
-        ? seed.country
-        : seed.country === 'Global' || index === 1
-          ? payload.country
-          : seed.country
+    const chosenCountry = payload.country === 'Global'
+      ? seed.country
+      : seed.country === 'Global' || index === 1 ? payload.country : seed.country
     const domainSuffix = payload.country === 'India' ? 'in' : payload.country === 'United Kingdom' ? 'co.uk' : 'com'
     const domain = `${toSlug(seed.site)}.${domainSuffix}`
-    const da = clamp(seed.daBase + (payload.goal === 'Authority building' ? 4 : 0) - (index % 2 === 0 ? 0 : 3), payload.daRange[0], Math.max(payload.daRange[1], payload.daRange[0] + 4))
-    const relevanceBase = analysis.provider === 'openai' ? 84 : 80
+    const da = clamp(
+      seed.daBase + (payload.goal === 'Authority building' ? 4 : 0) - (index % 2 === 0 ? 0 : 3),
+      payload.daRange[0], Math.max(payload.daRange[1], payload.daRange[0] + 4)
+    )
+    const relevanceBase = analysis.provider === 'openrouter' ? 84 : 80
     const relevance = clamp(
       relevanceBase +
         (payload.backlinkScope === 'Same niche' ? 7 : payload.backlinkScope === 'Related niche' ? 4 : 1) +
-        (chosenCountry === payload.country || chosenCountry === 'Global' ? 4 : 0) -
-        index,
-      76,
-      96
+        (chosenCountry === payload.country || chosenCountry === 'Global' ? 4 : 0) - index,
+      76, 96
     )
-
     return {
-      id: index + 1,
-      site: seed.site,
-      da,
-      traffic: seed.trafficBase + index * 1200 + (chosenCountry === payload.country ? 1500 : 0),
-      relevance,
-      difficulty: seed.difficulty,
-      country: chosenCountry,
-      linkType: seed.linkType,
+      id: index + 1, site: seed.site, da, traffic: seed.trafficBase + index * 1200 + (chosenCountry === payload.country ? 1500 : 0),
+      relevance, difficulty: seed.difficulty, country: chosenCountry, linkType: seed.linkType,
       contact: `${seed.linkType === 'Directory' ? 'submissions' : 'editorial'}@${domain}`,
       submission: `${domain}/${seed.linkType === 'Directory' ? 'submit-business' : seed.linkType === 'Forum' ? 'community' : 'contribute'}`,
       priority: seed.priority,
@@ -602,29 +401,20 @@ function buildFallbackReport(payload: GenerateBacklinksPayload, analysis: Websit
       contentIdea: `Create a ${payload.contentType.toLowerCase()} asset around ${primaryKeyword} and ${secondaryKeyword}, then pitch it with a ${payload.country.toLowerCase()} angle.`,
       keywords: [primaryKeyword, secondaryKeyword, analysis.keywords[2] ?? `${payload.goal.toLowerCase()} workflow`],
       anchors: ['Branded anchor', 'Natural supporting phrase', `${payload.industry} guide`],
-      risks: [
-        'Validate authority metrics and contact routes before sending outreach.',
-        'Keep anchor diversity high and avoid exact-match repetition.',
-        'Lead with a specific content angle instead of a generic promotional pitch.'
-      ],
+      risks: ['Validate authority metrics and contact routes before sending outreach.', 'Keep anchor diversity high and avoid exact-match repetition.', 'Lead with a specific content angle instead of a generic promotional pitch.'],
       nextStep: `Prepare a concise pitch for ${seed.site} and connect it to one concrete asset on ${normaliseUrl(payload.url)}.`
     }
   })
-
   const averageRelevance = Math.round(opportunities.reduce((sum, item) => sum + item.relevance, 0) / opportunities.length)
-
   return {
-    provider: 'fallback',
-    model: 'local-planner',
-    generatedAt: new Date().toISOString(),
+    provider: 'fallback', model: 'local-planner', generatedAt: new Date().toISOString(),
     validationNote: reason
-      ? `This report uses local fallback logic because live OpenAI generation was unavailable: ${reason}`
+      ? `This report uses local fallback logic because live OpenRouter generation was unavailable: ${reason}`
       : 'This report uses local fallback logic or partial crawl signals. Validate site metrics, contact details, and editorial fit before outreach.',
     overview: {
       headline: `${payload.industry} backlink plan for ${normaliseUrl(payload.url)}`,
       summary: `This shortlist balances ${payload.goal.toLowerCase()}, ${payload.backlinkScope.toLowerCase()} targets, and ${payload.country.toLowerCase()} relevance while staying aligned to the analyzed website themes.`,
-      averageRelevance,
-      firstPriority: opportunities[0].priority
+      averageRelevance, firstPriority: opportunities[0].priority
     },
     aiSuggestions: [
       `Lead with ${analysis.keywords[0] ?? 'your primary theme'} so the outreach stays tied to the website analysis.`,
@@ -646,15 +436,20 @@ function buildFallbackReport(payload: GenerateBacklinksPayload, analysis: Websit
   }
 }
 
-async function generateWithAnthropic(payload: GenerateBacklinksPayload, analysis: WebsiteAnalysis): Promise<GeneratedReport> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing ANTHROPIC_API_KEY');
-  }
-  const model = 'claude-3-5-sonnet-20241022';
-  const prompt = `You are an SEO strategist building a backlink planning report. Return concise, realistic strategy guidance in JSON only. Do not claim that contacts or metrics were verified live. Generate plausible planning data, not factual guarantees.
+async function generateWithOpenRouter(payload: GenerateBacklinksPayload, analysis: WebsiteAnalysis): Promise<GeneratedReport> {
+  const apiKey = process.env.OPENROUTER_API_KEY
+  if (!apiKey) throw new Error('Missing OPENROUTER_API_KEY')
+  const prompt = `You are an SEO strategist building a backlink planning report. Return ONLY valid JSON matching this structure:
 
-Build a backlink opportunity report for this website.
+{
+  "validationNote": "string explaining you should verify contacts and metrics",
+  "overview": { "headline": "string", "summary": "string", "averageRelevance": number, "firstPriority": "string" },
+  "aiSuggestions": ["string", "string", "string"],
+  "nextSteps": ["string", "string", "string"],
+  "opportunities": [ { "id":1,"site":"string","da":number,"traffic":number,"relevance":number,"difficulty":"Easy|Medium|Hard","country":"string","linkType":"Guest post|Directory|Forum|PR","contact":"string","submission":"string","priority":"Easy win|High authority|Quick approval","reason":"string","contentIdea":"string","keywords":["s1","s2","s3"],"anchors":["s1","s2","s3"],"risks":["s1","s2"],"nextStep":"string"} ],
+  "trackerPreview": [ {"status":"string","site":"string","note":"string"}, {"status":"string","site":"string","note":"string"}, {"status":"string","site":"string","note":"string"} ]
+}
+
 Website URL: ${payload.url}
 Industry: ${payload.industry}
 Backlink Scope: ${payload.backlinkScope}
@@ -664,78 +459,45 @@ Content Type: ${payload.contentType}
 Target Audience: ${payload.targetAudience}
 DA Range: ${payload.daRange[0]}-${payload.daRange[1]}
 
-Website analysis summary: ${analysis.summary}
+Website analysis: ${analysis.summary}
 Keywords: ${analysis.keywords.join(', ')}
-Target Audiences: ${analysis.targetAudiences.join(', ')}
+Audiences: ${analysis.targetAudiences.join(', ')}
 Notes: ${analysis.notes.join(' | ')}
 
-Generate exactly 6 opportunities with fields matching the reportCoreSchema (provider, model, generatedAt, validationNote, overview, aiSuggestions, nextSteps, opportunities, trackerPreview, websiteAnalysis).`;
+Generate exactly 6 opportunities. Mix easy wins, quick approvals, and high-authority targets.`
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
-
-  const data = await response.json();
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'anthropic/claude-3.5-sonnet', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] })
+  })
+  const data = await response.json()
   if (!response.ok) {
-    console.error('Anthropic error:', data);
-    throw new Error('Anthropic generation failed');
+    console.error('OpenRouter error:', data)
+    throw new Error(`OpenRouter generation failed: ${data.error?.message || 'unknown error'}`)
   }
-  let raw: string;
-  try {
-    raw = data.content[0].text;
-  } catch {
-    throw new Error('Unexpected Anthropic response format');
-  }
-  const core = JSON.parse(raw) as Omit<GeneratedReport, 'provider' | 'model' | 'generatedAt' | 'websiteAnalysis'>;
+  const raw = data.choices?.[0]?.message?.content
+  if (!raw) throw new Error('Unexpected OpenRouter response format')
+  const core = JSON.parse(raw) as Omit<GeneratedReport, 'provider' | 'model' | 'generatedAt' | 'websiteAnalysis'>
   return {
-    provider: 'anthropic',
-    model,
-    generatedAt: new Date().toISOString(),
-    validationNote: core.validationNote,
-    overview: core.overview,
-    aiSuggestions: core.aiSuggestions,
-    nextSteps: core.nextSteps,
-    opportunities: core.opportunities,
-    trackerPreview: core.trackerPreview,
+    provider: 'openrouter', model: 'anthropic/claude-3.5-sonnet', generatedAt: new Date().toISOString(),
+    validationNote: core.validationNote, overview: core.overview, aiSuggestions: core.aiSuggestions,
+    nextSteps: core.nextSteps, opportunities: core.opportunities, trackerPreview: core.trackerPreview,
     websiteAnalysis: analysis
-  };
+  }
 }
 
 export async function handleBacklinkApi(req: IncomingMessage, res: ServerResponse) {
   const requestUrl = req.url ?? ''
-
   if (requestUrl === '/api/health') {
-    sendJson(res, 200, {
-      ok: true,
-      anthropicConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
-      model: process.env.OPENAI_MODEL || 'gpt-5.5'
-    })
+    sendJson(res, 200, { ok: true, openrouterConfigured: Boolean(process.env.OPENROUTER_API_KEY) })
     return
   }
-
   if (requestUrl === '/api/analyze-website') {
-    if (req.method !== 'POST') {
-      sendJson(res, 405, { error: 'Method not allowed.' })
-      return
-    }
-
+    if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }); return }
     try {
       const payload = await readJsonBody<{ url?: string }>(req)
-      if (!payload.url) {
-        sendJson(res, 400, { error: 'Website URL is required.' })
-        return
-      }
-
+      if (!payload.url) { sendJson(res, 400, { error: 'Website URL is required.' }); return }
       const analysis = await analyzeWebsite(payload.url)
       sendJson(res, 200, { analysis })
     } catch (error) {
@@ -744,37 +506,22 @@ export async function handleBacklinkApi(req: IncomingMessage, res: ServerRespons
     }
     return
   }
-
   if (requestUrl !== '/api/generate-backlinks') {
-    sendJson(res, 404, { error: 'Not found.' })
-    return
+    sendJson(res, 404, { error: 'Not found.' }); return
   }
-
-  if (req.method !== 'POST') {
-    sendJson(res, 405, { error: 'Method not allowed.' })
-    return
-  }
-
+  if (req.method !== 'POST') { sendJson(res, 405, { error: 'Method not allowed.' }); return }
   try {
     const payload = await readJsonBody<GenerateBacklinksPayload>(req)
-
-    if (!isValidPayload(payload)) {
-      sendJson(res, 400, { error: 'Invalid request payload.' })
-      return
-    }
-
+    if (!isValidPayload(payload)) { sendJson(res, 400, { error: 'Invalid request payload.' }); return }
     const analysis = await analyzeWebsite(payload.url)
-
-    if (!process.env.ANTHROPIC_API_KEY) {
-      sendJson(res, 200, buildFallbackReport(payload, analysis))
-      return
+    if (!process.env.OPENROUTER_API_KEY) {
+      sendJson(res, 200, buildFallbackReport(payload, analysis)); return
     }
-
     try {
-      const report = await generateWithAnthropic(payload, analysis)
+      const report = await generateWithOpenRouter(payload, analysis)
       sendJson(res, 200, report)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Live Anthropic generation was unavailable.'
+      const message = error instanceof Error ? error.message : 'Live OpenRouter generation was unavailable.'
       sendJson(res, 200, buildFallbackReport(payload, analysis, message))
     }
   } catch (error) {
