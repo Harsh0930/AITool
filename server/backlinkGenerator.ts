@@ -1,5 +1,4 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import OpenAI from 'openai'
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard'
 type LinkType = 'Guest post' | 'Directory' | 'Forum' | 'PR'
@@ -306,7 +305,6 @@ const stopWords = new Set([
   'your'
 ])
 
-let client: OpenAI | null = null
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -498,54 +496,56 @@ function buildFallbackAnalysis(snapshot: WebsiteSnapshot, reason?: string): Webs
   }
 }
 
-async function getOpenAIClient() {
-  if (!client) {
-    client = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    })
-  }
-
-  return client
+// Deprecated OpenAI client placeholder. Not used in Anthropic implementation.
+function getOpenAIClient(): never {
+  throw new Error('OpenAI client is not available. Use Anthropic API.')
 }
 
 async function analyzeWebsite(url: string): Promise<WebsiteAnalysis> {
   const snapshot = await fetchWebsiteSnapshot(url)
 
-  if (!process.env.OPENAI_API_KEY) {
-    return buildFallbackAnalysis(snapshot)
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return buildFallbackAnalysis(snapshot);
   }
 
-  try {
-    const openai = await getOpenAIClient()
-    const model = process.env.OPENAI_MODEL || 'gpt-5.5'
-    const response = await openai.responses.create({
-      model,
-      reasoning: {
-        effort: 'medium'
-      },
-      text: {
-        format: {
-          type: 'json_schema',
-          name: 'website_analysis',
-          strict: true,
-          schema: websiteAnalysisSchema
-        }
-      },
-      instructions:
-        'You analyze website positioning for SEO planning. Infer likely industry, content type, keywords, and target audiences from the supplied page content. Keep outputs concise and practical.',
-      input: `Analyze this website for backlink strategy planning.
+  const prompt = `You are an SEO analyst. Provide a concise JSON analysis of the website for backlink strategy.
 
 Source URL: ${snapshot.sourceUrl}
-Page title: ${snapshot.title}
+Title: ${snapshot.title}
 Meta description: ${snapshot.description}
 Headings: ${snapshot.headings.join(' | ')}
-Extracted text: ${snapshot.text}`
-    })
+Extracted text: ${snapshot.text}`;
 
-    const parsed = JSON.parse(response.output_text || '{}') as Omit<WebsiteAnalysis, 'provider' | 'sourceUrl' | 'title' | 'description'>
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 2048,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
 
+    const data = await response.json();
+    if (!response.ok) {
+      console.error('Anthropic error:', data);
+      return buildFallbackAnalysis(snapshot, 'Anthropic API error');
+    }
+    let raw: string;
+    try {
+      raw = data.content[0].text;
+    } catch {
+      return buildFallbackAnalysis(snapshot, 'Unexpected Anthropic response format');
+    }
+    const parsed = JSON.parse(raw) as Omit<WebsiteAnalysis, 'provider' | 'sourceUrl' | 'title' | 'description'>;
     return {
-      provider: 'openai',
+      provider: 'anthropic',
       sourceUrl: snapshot.sourceUrl,
       title: snapshot.title || normaliseUrl(snapshot.sourceUrl),
       description: snapshot.description || `Website analysis for ${normaliseUrl(snapshot.sourceUrl)}`,
@@ -555,10 +555,10 @@ Extracted text: ${snapshot.text}`
       keywords: parsed.keywords,
       targetAudiences: parsed.targetAudiences,
       notes: parsed.notes
-    }
+    };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Live website analysis was unavailable.'
-    return buildFallbackAnalysis(snapshot, message)
+    const message = error instanceof Error ? error.message : 'Live website analysis was unavailable.';
+    return buildFallbackAnalysis(snapshot, message);
   }
 }
 
@@ -645,57 +645,59 @@ function buildFallbackReport(payload: GenerateBacklinksPayload, analysis: Websit
   }
 }
 
-async function generateWithOpenAI(payload: GenerateBacklinksPayload, analysis: WebsiteAnalysis): Promise<GeneratedReport> {
-  const openai = await getOpenAIClient()
-  const model = process.env.OPENAI_MODEL || 'gpt-5.5'
-  const response = await openai.responses.create({
-    model,
-    reasoning: {
-      effort: 'medium'
-    },
-    text: {
-      format: {
-        type: 'json_schema',
-        name: 'backlink_strategy_report',
-        strict: true,
-        schema: reportCoreSchema
-      }
-    },
-    instructions:
-      'You are an SEO strategist building a backlink planning report. Return concise, realistic strategy guidance. Do not claim that contacts or metrics were verified live. Generate plausible planning data, not factual guarantees.',
-    input: `Build a backlink opportunity report for this website and return JSON only.
+async function generateWithAnthropic(payload: GenerateBacklinksPayload, analysis: WebsiteAnalysis): Promise<GeneratedReport> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing ANTHROPIC_API_KEY');
+  }
+  const model = 'claude-3-5-sonnet-20241022';
+  const prompt = `You are an SEO strategist building a backlink planning report. Return concise, realistic strategy guidance in JSON only. Do not claim that contacts or metrics were verified live. Generate plausible planning data, not factual guarantees.
 
+Build a backlink opportunity report for this website.
 Website URL: ${payload.url}
-Business type: ${payload.industry}
-Backlink niche scope: ${payload.backlinkScope}
-Target country: ${payload.country}
-SEO goal: ${payload.goal}
-Content type: ${payload.contentType}
-Target audience: ${payload.targetAudience}
-Desired DA range: ${payload.daRange[0]} to ${payload.daRange[1]}
+Industry: ${payload.industry}
+Backlink Scope: ${payload.backlinkScope}
+Country: ${payload.country}
+Goal: ${payload.goal}
+Content Type: ${payload.contentType}
+Target Audience: ${payload.targetAudience}
+DA Range: ${payload.daRange[0]}-${payload.daRange[1]}
 
 Website analysis summary: ${analysis.summary}
-Website keywords: ${analysis.keywords.join(', ')}
-Suggested target audiences: ${analysis.targetAudiences.join(', ')}
-Website notes: ${analysis.notes.join(' | ')}
+Keywords: ${analysis.keywords.join(', ')}
+Target Audiences: ${analysis.targetAudiences.join(', ')}
+Notes: ${analysis.notes.join(' | ')}
 
-Requirements:
-- Generate 6 opportunities.
-- Mix easy wins, quick approvals, and high-authority targets.
-- Tailor reasons, keywords, anchors, and next steps to the brief.
-- Keep the copy decision-oriented and practical.
-- Make the validation note explicit that the user should verify any contact routes and metrics.`
-  })
+Generate exactly 6 opportunities with fields matching the reportCoreSchema (provider, model, generatedAt, validationNote, overview, aiSuggestions, nextSteps, opportunities, trackerPreview, websiteAnalysis).`;
 
-  const raw = response.output_text
-  if (!raw) {
-    throw new Error('OpenAI returned an empty response.')
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('Anthropic error:', data);
+    throw new Error('Anthropic generation failed');
   }
-
-  const core = JSON.parse(raw) as Omit<GeneratedReport, 'provider' | 'model' | 'generatedAt' | 'websiteAnalysis'>
-
+  let raw: string;
+  try {
+    raw = data.content[0].text;
+  } catch {
+    throw new Error('Unexpected Anthropic response format');
+  }
+  const core = JSON.parse(raw) as Omit<GeneratedReport, 'provider' | 'model' | 'generatedAt' | 'websiteAnalysis'>;
   return {
-    provider: 'openai',
+    provider: 'anthropic',
     model,
     generatedAt: new Date().toISOString(),
     validationNote: core.validationNote,
@@ -705,7 +707,7 @@ Requirements:
     opportunities: core.opportunities,
     trackerPreview: core.trackerPreview,
     websiteAnalysis: analysis
-  }
+  };
 }
 
 export async function handleBacklinkApi(req: IncomingMessage, res: ServerResponse) {
@@ -714,7 +716,7 @@ export async function handleBacklinkApi(req: IncomingMessage, res: ServerRespons
   if (requestUrl === '/api/health') {
     sendJson(res, 200, {
       ok: true,
-      openAIConfigured: Boolean(process.env.OPENAI_API_KEY),
+      anthropicConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
       model: process.env.OPENAI_MODEL || 'gpt-5.5'
     })
     return
@@ -762,16 +764,16 @@ export async function handleBacklinkApi(req: IncomingMessage, res: ServerRespons
 
     const analysis = await analyzeWebsite(payload.url)
 
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY) {
       sendJson(res, 200, buildFallbackReport(payload, analysis))
       return
     }
 
     try {
-      const report = await generateWithOpenAI(payload, analysis)
+      const report = await generateWithAnthropic(payload, analysis)
       sendJson(res, 200, report)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Live OpenAI generation was unavailable.'
+      const message = error instanceof Error ? error.message : 'Live Anthropic generation was unavailable.'
       sendJson(res, 200, buildFallbackReport(payload, analysis, message))
     }
   } catch (error) {
